@@ -47,15 +47,15 @@ jobs:
 
     # Generates an execution plan for Terraform
     - name: Terraform Plan
-      run: terraform plan -input=false -vars-file=${{ env.TFVARS_DEPLOY }}
+      run: terraform plan -input=false -var-file=${{ env.TFVARS_DEPLOY }}
 
     # Apply the Terraform plan
     - name: Terraform Apply
       if: contains(github.event.head_commit.message, 'deploy') && !contains(github.event.head_commit.message, 'destroy')
-      run: terraform apply -auto-approve -vars-file=${{ env.TFVARS_DEPLOY }}
+      run: terraform apply -auto-approve -var-file=${{ env.TFVARS_DEPLOY }}
 
     # Destroy the Terraform-managed infrastructure
     - name: Terraform Destroy
       if: contains(github.event.head_commit.message, 'destroy') && !contains(github.event.head_commit.message, 'deploy')
-      run: terraform destroy -auto-approve -vars-file=${{ env.TFVARS_DEPLOY }}
+      run: terraform destroy -auto-approve -var-file=${{ env.TFVARS_DEPLOY }}
 
