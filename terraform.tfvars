@@ -1,3 +1,3 @@
 ami = {
-  "apache" = "ami-069ee37e42ec2888e"
+  "apache" = "ami-0c02fb55956c7d316"
 }
