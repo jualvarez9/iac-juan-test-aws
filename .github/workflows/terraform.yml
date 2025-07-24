@@ -48,7 +48,7 @@ jobs:
         echo "TFVARS_FILE=$TFVARS_FILE" >> $GITHUB_OUTPUT
 
         
-    # Formatear codigo
+    # Formatear codigos
     - name: Terraform Format
       run: terraform fmt
 
