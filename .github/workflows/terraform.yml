@@ -26,7 +26,7 @@ jobs:
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      TFVARS_DEPLOY: "prueba.tfvars"
+      COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         
     steps:
     # Bajamos el codigo del repo al runner
@@ -41,21 +41,28 @@ jobs:
     - name: Terraform Init
       run: terraform init
 
+    - name: Extract tfvars desde el commit
+      id: extract_tfvars
+      run: |
+        TFVARS_FILE=$(echo "${COMMIT_MESSAGE}" | grep -o '\S*\.tfvars')
+        echo "TFVARS_FILE=$TFVARS_FILE" >> $GITHUB_OUTPUT
+
+        
     # Formatear codigo
     - name: Terraform Format
       run: terraform fmt
 
     # Generates an execution plan for Terraform
     - name: Terraform Plan
-      run: terraform plan -input=false -var-file=${{ env.TFVARS_DEPLOY }}
+      run: terraform plan -input=false -var-file=${{ steps.extract_tfvars.outputs.TFVARS_FILE }}
 
     # Apply the Terraform plan
     - name: Terraform Apply
       if: contains(github.event.head_commit.message, 'deploy') && !contains(github.event.head_commit.message, 'destroy')
-      run: terraform apply -auto-approve -var-file=${{ env.TFVARS_DEPLOY }}
+      run: terraform apply -auto-approve -var-file=${{ steps.extract_tfvars.outputs.TFVARS_FILE }}
 
     # Destroy the Terraform-managed infrastructure
     - name: Terraform Destroy
       if: contains(github.event.head_commit.message, 'destroy') && !contains(github.event.head_commit.message, 'deploy')
-      run: terraform destroy -auto-approve -var-file=${{ env.TFVARS_DEPLOY }}
+      run: terraform destroy -auto-approve -var-file=${{ steps.extract_tfvars.outputs.TFVARS_FILE }}
 
