@@ -9,11 +9,12 @@ resource "aws_instance" "prueba1" {
 }
 
 resource "aws_instance" "prueba2" {
+  count = 2
   ami           = var.ami["apache"] 
   instance_type = "t2.micro"
 
   tags = {
-    Name = "Prueba2"
+    Name = "Prueba2-${count.index + 1}"
   }
   
 }
