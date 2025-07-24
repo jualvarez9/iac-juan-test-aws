@@ -26,6 +26,7 @@ jobs:
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      TFVARS_DEPLOY: "prueba.tfvars"
         
     steps:
     # Bajamos el codigo del repo al runner
@@ -46,15 +47,15 @@ jobs:
 
     # Generates an execution plan for Terraform
     - name: Terraform Plan
-      run: terraform plan -input=false
+      run: terraform plan -input=false --vars-file=${{ env.TFVARS_DEPLOY }}
 
     # Apply the Terraform plan
     - name: Terraform Apply
       if: contains(github.event.head_commit.message, 'deploy') && !contains(github.event.head_commit.message, 'destroy')
-      run: terraform apply -auto-approve
+      run: terraform apply -auto-approve --vars-file=${{ env.TFVARS_DEPLOY }}
 
     # Destroy the Terraform-managed infrastructure
     - name: Terraform Destroy
       if: contains(github.event.head_commit.message, 'destroy') && !contains(github.event.head_commit.message, 'deploy')
-      run: terraform destroy -auto-approve
+      run: terraform destroy -auto-approve --vars-file=${{ env.TFVARS_DEPLOY }}
 
