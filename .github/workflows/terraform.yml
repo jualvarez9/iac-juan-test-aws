@@ -25,37 +25,57 @@ jobs:
       TERRAFORM_VERSION: "1.6.6"
         
     steps:
-    - name: Setup working directory
+    - name: Aggressive Cleanup
       run: |
-        echo "=== Configurando directorio de trabajo ==="
-        pwd
-        ls -la
-        mkdir -p ${{ github.workspace }} || true
-        cd ${{ github.workspace }}
-        echo "Directorio actual: $(pwd)"
-        echo "Contenido: $(ls -la)"
+        echo "=== LIMPIEZA AGRESIVA DE ESPACIO ==="
+        df -h
+        
+        # Limpiar caches del sistema
+        sudo apt-get clean
+        sudo apt-get autoclean
+        sudo apt-get autoremove -y
+        
+        # Limpiar logs del sistema
+        sudo journalctl --vacuum-time=1h
+        sudo journalctl --vacuum-size=10M
+        
+        # Limpiar archivos temporales
+        sudo find /tmp -type f -delete 2>/dev/null || true
+        sudo find /var/tmp -type f -delete 2>/dev/null || true
+        
+        # Limpiar caches de Terraform de otros jobs
+        sudo find / -name ".terraform" -type d -exec rm -rf {} + 2>/dev/null || true
+        sudo find / -name "terraform.tfstate*" -type f -delete 2>/dev/null || true
+        sudo find / -name "*.terraform*" -type f -delete 2>/dev/null || true
+        
+        # Limpiar Docker si está disponible
+        docker system prune -af 2>/dev/null || true
+        docker volume prune -f 2>/dev/null || true
+        
+        # Limpiar archivos de log grandes
+        sudo find /var/log -name "*.log" -size +10M -delete 2>/dev/null || true
+        sudo find /var/log -name "*.log.*" -delete 2>/dev/null || true
+        
+        # Limpiar caches de paquetes
+        sudo rm -rf /var/cache/apt/archives/* 2>/dev/null || true
+        sudo rm -rf /var/lib/apt/lists/* 2>/dev/null || true
+        
+        echo "=== Espacio después de limpieza agresiva ==="
+        df -h
+        
+        # Verificar si tenemos al menos 1GB libre
+        AVAILABLE=$(df / | awk 'NR==2 {print $4}')
+        if [ $AVAILABLE -lt 1048576 ]; then
+          echo "ERROR: Aún no hay suficiente espacio libre. Disponible: ${AVAILABLE}KB"
+          echo "Se requieren al menos 1GB libres para continuar"
+          exit 1
+        fi
 
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Check available space
-      run: |
-        echo "=== Directorio actual ==="
-        pwd
-        echo "=== Espacio disponible inicial ==="
-        df -h
-        echo "=== Limpiando espacio ==="
-        sudo apt-get clean || true
-        sudo rm -rf /tmp/terraform* /tmp/.terraform* 2>/dev/null || true
-        sudo journalctl --vacuum-time=1d 2>/dev/null || true
-        echo "=== Espacio después de limpieza ==="
-        df -h
-
     - name: Install Terraform
       run: |
-        echo "=== Directorio actual: $(pwd) ==="
-        
-        # Verificar si terraform ya está instalado
         if command -v terraform &> /dev/null; then
           echo "Terraform ya está instalado: $(terraform version)"
           exit 0
@@ -63,38 +83,35 @@ jobs:
         
         echo "Instalando Terraform ${TERRAFORM_VERSION}..."
         
-        # Crear directorio temporal si no existe
-        mkdir -p /tmp
+        # Usar /usr/local/bin directamente
         cd /tmp
-        
-        # Descargar e instalar Terraform
-        wget -q https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip
-        unzip -q terraform_${TERRAFORM_VERSION}_linux_amd64.zip
+        curl -fsSL "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip" -o terraform.zip
+        unzip -q terraform.zip
         sudo mv terraform /usr/local/bin/
         sudo chmod +x /usr/local/bin/terraform
+        rm -f terraform.zip
         
-        # Limpiar archivos de descarga
-        rm -f terraform_${TERRAFORM_VERSION}_linux_amd64.zip
-        
-        # Volver al directorio de trabajo
-        cd ${{ github.workspace }}
-        
-        # Verificar instalación
         terraform version
         echo "Terraform instalado correctamente"
 
-    - name: Terraform Init
+    - name: Terraform Init with Space Management
       working-directory: ${{ github.workspace }}
       run: |
-        echo "=== Directorio actual: $(pwd) ==="
-        echo "=== Verificando espacio antes de init ==="
+        echo "=== Espacio antes de init ==="
         df -h
         
-        echo "=== Limpiando cache previo de Terraform ==="
+        # Limpiar cualquier cache previo en el directorio actual
         rm -rf .terraform* terraform.tfstate* 2>/dev/null || true
         
-        echo "=== Inicializando Terraform ==="
-        terraform init -no-color
+        # Configurar Terraform para usar menos espacio
+        export TF_PLUGIN_CACHE_DIR="/tmp/terraform-plugin-cache"
+        mkdir -p "$TF_PLUGIN_CACHE_DIR"
+        
+        echo "=== Inicializando Terraform con cache optimizado ==="
+        terraform init -no-color -upgrade=false
+        
+        echo "=== Espacio después de init ==="
+        df -h
 
     - name: Extract tfvars desde el commit
       id: extract_tfvars
@@ -106,7 +123,12 @@ jobs:
           echo "TFVARS_FILE=" >> $GITHUB_OUTPUT
         else
           echo "Archivo tfvars encontrado: $TFVARS_FILE"
-          echo "TFVARS_FILE=$TFVARS_FILE" >> $GITHUB_OUTPUT
+          if [ -f "$TFVARS_FILE" ]; then
+            echo "TFVARS_FILE=$TFVARS_FILE" >> $GITHUB_OUTPUT
+          else
+            echo "ADVERTENCIA: Archivo $TFVARS_FILE no existe"
+            echo "TFVARS_FILE=" >> $GITHUB_OUTPUT
+          fi
         fi
 
     - name: Terraform Format
@@ -116,6 +138,9 @@ jobs:
     - name: Terraform Plan
       working-directory: ${{ github.workspace }}
       run: |
+        echo "=== Espacio antes de plan ==="
+        df -h
+        
         if [ -n "${{ steps.extract_tfvars.outputs.TFVARS_FILE }}" ]; then
           terraform plan -input=false -var-file=${{ steps.extract_tfvars.outputs.TFVARS_FILE }}
         else
@@ -126,6 +151,9 @@ jobs:
       if: contains(github.event.head_commit.message, 'deploy') && !contains(github.event.head_commit.message, 'destroy')
       working-directory: ${{ github.workspace }}
       run: |
+        echo "=== Espacio antes de apply ==="
+        df -h
+        
         if [ -n "${{ steps.extract_tfvars.outputs.TFVARS_FILE }}" ]; then
           terraform apply -auto-approve -var-file=${{ steps.extract_tfvars.outputs.TFVARS_FILE }}
         else
@@ -142,9 +170,13 @@ jobs:
           terraform destroy -auto-approve
         fi
 
-    - name: Cleanup
+    - name: Final Cleanup
       if: always()
       run: |
         echo "=== Limpieza final ==="
-        rm -rf /tmp/terraform* 2>/dev/null || true
+        # Limpiar cache de plugins de Terraform
+        rm -rf /tmp/terraform-plugin-cache 2>/dev/null || true
+        rm -rf .terraform* 2>/dev/null || true
+        # Limpiar archivos temporales
+        sudo find /tmp -name "*terraform*" -delete 2>/dev/null || true
         df -h
