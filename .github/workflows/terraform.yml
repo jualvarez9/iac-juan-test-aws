@@ -74,7 +74,7 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v3
 
-    - name: Install Terraform
+    - name: Install Terraformm
       run: |
         if command -v terraform &> /dev/null; then
           echo "Terraform ya está instalado: $(terraform version)"
