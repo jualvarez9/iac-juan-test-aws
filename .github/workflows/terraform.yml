@@ -15,7 +15,7 @@ permissions:
 jobs:
   terraform:
     name: 'Terraform'
-    runs-on: [self-hosted, k3s, aws]  # ← CAMBIO AQUÍ
+    runs-on: [self-hosted, k3s, aws]  # ← CAMBIO AQUÍd
     environment: production
 
     defaults:
