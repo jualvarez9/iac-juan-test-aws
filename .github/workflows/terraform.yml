@@ -39,7 +39,22 @@ jobs:
 
     # Inicializar Terraform
     - name: Terraform Init
-      run: terraform init
+      run: |
+        echo "=== Verificando espacio ==="
+        df -h
+        
+        echo "=== Limpiando cache previo ==="
+        rm -rf .terraform* terraform.tfstate* 2>/dev/null || true
+        
+        echo "=== Liberando espacio en /tmp ==="
+        find /tmp -name "*terraform*" -type f -delete 2>/dev/null || true
+        find /tmp -name ".terraform*" -type d -exec rm -rf {} + 2>/dev/null || true
+        
+        echo "=== Espacio después de limpiar ==="
+        df -h
+        
+        echo "=== Inicializando Terraform ==="
+        terraform init -no-color
 
     - name: Extract tfvars desde el commit
       id: extract_tfvars
