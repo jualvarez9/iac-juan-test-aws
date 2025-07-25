@@ -15,10 +15,9 @@ permissions:
 jobs:
   terraform:
     name: 'Terraform'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, k3s, aws]  # ← CAMBIO AQUÍ
     environment: production
 
-    # Use the Bash shell regardless whether the GitHub Actions runner is ubuntu-latest, macos-latest, or windows-latest
     defaults:
       run:
         shell: bash
@@ -65,4 +64,3 @@ jobs:
     - name: Terraform Destroy
       if: contains(github.event.head_commit.message, 'destroy') && !contains(github.event.head_commit.message, 'deploy')
       run: terraform destroy -auto-approve -var-file=${{ steps.extract_tfvars.outputs.TFVARS_FILE }}
-
