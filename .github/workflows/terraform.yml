@@ -64,7 +64,7 @@ jobs:
         fi
         echo "✅ Espacio suficiente disponible: ${AVAILABLE}KB"
 
-    - name: Manual Checkout
+    - name: Manual Checkoutd
       run: |
         echo "=== CHECKOUT MANUAL DEL REPOSITORIO ==="
         cd ${{ github.workspace }}
