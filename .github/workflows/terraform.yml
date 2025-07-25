@@ -25,25 +25,36 @@ jobs:
       TERRAFORM_VERSION: "1.6.6"
         
     steps:
+    - name: Setup working directory
+      run: |
+        echo "=== Configurando directorio de trabajo ==="
+        pwd
+        ls -la
+        mkdir -p ${{ github.workspace }} || true
+        cd ${{ github.workspace }}
+        echo "Directorio actual: $(pwd)"
+        echo "Contenido: $(ls -la)"
+
     - name: Checkout
       uses: actions/checkout@v4
-    
+
     - name: Check available space
       run: |
+        echo "=== Directorio actual ==="
+        pwd
         echo "=== Espacio disponible inicial ==="
         df -h
         echo "=== Limpiando espacio ==="
-        # Limpiar caches de apt
         sudo apt-get clean || true
-        # Limpiar archivos temporales
-        sudo rm -rf /tmp/* 2>/dev/null || true
-        # Limpiar logs antiguos
+        sudo rm -rf /tmp/terraform* /tmp/.terraform* 2>/dev/null || true
         sudo journalctl --vacuum-time=1d 2>/dev/null || true
         echo "=== Espacio después de limpieza ==="
         df -h
 
     - name: Install Terraform
       run: |
+        echo "=== Directorio actual: $(pwd) ==="
+        
         # Verificar si terraform ya está instalado
         if command -v terraform &> /dev/null; then
           echo "Terraform ya está instalado: $(terraform version)"
@@ -52,8 +63,11 @@ jobs:
         
         echo "Instalando Terraform ${TERRAFORM_VERSION}..."
         
-        # Descargar e instalar Terraform
+        # Crear directorio temporal si no existe
+        mkdir -p /tmp
         cd /tmp
+        
+        # Descargar e instalar Terraform
         wget -q https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip
         unzip -q terraform_${TERRAFORM_VERSION}_linux_amd64.zip
         sudo mv terraform /usr/local/bin/
@@ -62,12 +76,17 @@ jobs:
         # Limpiar archivos de descarga
         rm -f terraform_${TERRAFORM_VERSION}_linux_amd64.zip
         
+        # Volver al directorio de trabajo
+        cd ${{ github.workspace }}
+        
         # Verificar instalación
         terraform version
         echo "Terraform instalado correctamente"
 
     - name: Terraform Init
+      working-directory: ${{ github.workspace }}
       run: |
+        echo "=== Directorio actual: $(pwd) ==="
         echo "=== Verificando espacio antes de init ==="
         df -h
         
@@ -79,6 +98,7 @@ jobs:
 
     - name: Extract tfvars desde el commit
       id: extract_tfvars
+      working-directory: ${{ github.workspace }}
       run: |
         TFVARS_FILE=$(echo "${COMMIT_MESSAGE}" | grep -o '\S*\.tfvars' || echo "")
         if [ -z "$TFVARS_FILE" ]; then
@@ -90,9 +110,11 @@ jobs:
         fi
 
     - name: Terraform Format
+      working-directory: ${{ github.workspace }}
       run: terraform fmt
 
     - name: Terraform Plan
+      working-directory: ${{ github.workspace }}
       run: |
         if [ -n "${{ steps.extract_tfvars.outputs.TFVARS_FILE }}" ]; then
           terraform plan -input=false -var-file=${{ steps.extract_tfvars.outputs.TFVARS_FILE }}
@@ -102,6 +124,7 @@ jobs:
 
     - name: Terraform Apply
       if: contains(github.event.head_commit.message, 'deploy') && !contains(github.event.head_commit.message, 'destroy')
+      working-directory: ${{ github.workspace }}
       run: |
         if [ -n "${{ steps.extract_tfvars.outputs.TFVARS_FILE }}" ]; then
           terraform apply -auto-approve -var-file=${{ steps.extract_tfvars.outputs.TFVARS_FILE }}
@@ -111,6 +134,7 @@ jobs:
 
     - name: Terraform Destroy
       if: contains(github.event.head_commit.message, 'destroy') && !contains(github.event.head_commit.message, 'deploy')
+      working-directory: ${{ github.workspace }}
       run: |
         if [ -n "${{ steps.extract_tfvars.outputs.TFVARS_FILE }}" ]; then
           terraform destroy -auto-approve -var-file=${{ steps.extract_tfvars.outputs.TFVARS_FILE }}
