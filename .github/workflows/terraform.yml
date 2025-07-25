@@ -3,19 +3,15 @@ name: 'Terraform IAC AWS Workflow'
 on:
   push:
     branches: [ "main" ]
-  
   workflow_dispatch:
-
 
 permissions:
   contents: read
-  
-
 
 jobs:
   terraform:
     name: 'Terraform'
-    runs-on: [self-hosted, k3s, aws]  # ← CAMBIO AQUÍd
+    runs-on: [self-hosted, k3s, aws]
     environment: production
 
     defaults:
@@ -26,32 +22,57 @@ jobs:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+      TERRAFORM_VERSION: "1.6.6"
         
     steps:
-    # Bajamos el codigo del repo al runner
     - name: Checkout
       uses: actions/checkout@v4
+    
+    - name: Check available space
+      run: |
+        echo "=== Espacio disponible inicial ==="
+        df -h
+        echo "=== Limpiando espacio ==="
+        # Limpiar caches de apt
+        sudo apt-get clean || true
+        # Limpiar archivos temporales
+        sudo rm -rf /tmp/* 2>/dev/null || true
+        # Limpiar logs antiguos
+        sudo journalctl --vacuum-time=1d 2>/dev/null || true
+        echo "=== Espacio después de limpieza ==="
+        df -h
 
+    - name: Install Terraform
+      run: |
+        # Verificar si terraform ya está instalado
+        if command -v terraform &> /dev/null; then
+          echo "Terraform ya está instalado: $(terraform version)"
+          exit 0
+        fi
+        
+        echo "Instalando Terraform ${TERRAFORM_VERSION}..."
+        
+        # Descargar e instalar Terraform
+        cd /tmp
+        wget -q https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip
+        unzip -q terraform_${TERRAFORM_VERSION}_linux_amd64.zip
+        sudo mv terraform /usr/local/bin/
+        sudo chmod +x /usr/local/bin/terraform
+        
+        # Limpiar archivos de descarga
+        rm -f terraform_${TERRAFORM_VERSION}_linux_amd64.zip
+        
+        # Verificar instalación
+        terraform version
+        echo "Terraform instalado correctamente"
 
-    # Instalamos Terraform en el runner
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v1
-
-    # Inicializar Terraforms
     - name: Terraform Init
       run: |
-        echo "=== Verificando espacio ==="
+        echo "=== Verificando espacio antes de init ==="
         df -h
         
-        echo "=== Limpiando cache previo ==="
+        echo "=== Limpiando cache previo de Terraform ==="
         rm -rf .terraform* terraform.tfstate* 2>/dev/null || true
-        
-        echo "=== Liberando espacio en /tmp ==="
-        find /tmp -name "*terraform*" -type f -delete 2>/dev/null || true
-        find /tmp -name ".terraform*" -type d -exec rm -rf {} + 2>/dev/null || true
-        
-        echo "=== Espacio después de limpiar ==="
-        df -h
         
         echo "=== Inicializando Terraform ==="
         terraform init -no-color
@@ -59,24 +80,47 @@ jobs:
     - name: Extract tfvars desde el commit
       id: extract_tfvars
       run: |
-        TFVARS_FILE=$(echo "${COMMIT_MESSAGE}" | grep -o '\S*\.tfvars')
-        echo "TFVARS_FILE=$TFVARS_FILE" >> $GITHUB_OUTPUT
+        TFVARS_FILE=$(echo "${COMMIT_MESSAGE}" | grep -o '\S*\.tfvars' || echo "")
+        if [ -z "$TFVARS_FILE" ]; then
+          echo "No se encontró archivo .tfvars en el mensaje del commit"
+          echo "TFVARS_FILE=" >> $GITHUB_OUTPUT
+        else
+          echo "Archivo tfvars encontrado: $TFVARS_FILE"
+          echo "TFVARS_FILE=$TFVARS_FILE" >> $GITHUB_OUTPUT
+        fi
 
-        
-    # Formatear codigo
     - name: Terraform Format
       run: terraform fmt
 
-    # Generates an execution plan for Terraform
     - name: Terraform Plan
-      run: terraform plan -input=false -var-file=${{ steps.extract_tfvars.outputs.TFVARS_FILE }}
+      run: |
+        if [ -n "${{ steps.extract_tfvars.outputs.TFVARS_FILE }}" ]; then
+          terraform plan -input=false -var-file=${{ steps.extract_tfvars.outputs.TFVARS_FILE }}
+        else
+          terraform plan -input=false
+        fi
 
-    # Apply the Terraform plan
     - name: Terraform Apply
       if: contains(github.event.head_commit.message, 'deploy') && !contains(github.event.head_commit.message, 'destroy')
-      run: terraform apply -auto-approve -var-file=${{ steps.extract_tfvars.outputs.TFVARS_FILE }}
+      run: |
+        if [ -n "${{ steps.extract_tfvars.outputs.TFVARS_FILE }}" ]; then
+          terraform apply -auto-approve -var-file=${{ steps.extract_tfvars.outputs.TFVARS_FILE }}
+        else
+          terraform apply -auto-approve
+        fi
 
-    # Destroy the Terraform-managed infrastructure
     - name: Terraform Destroy
       if: contains(github.event.head_commit.message, 'destroy') && !contains(github.event.head_commit.message, 'deploy')
-      run: terraform destroy -auto-approve -var-file=${{ steps.extract_tfvars.outputs.TFVARS_FILE }}
+      run: |
+        if [ -n "${{ steps.extract_tfvars.outputs.TFVARS_FILE }}" ]; then
+          terraform destroy -auto-approve -var-file=${{ steps.extract_tfvars.outputs.TFVARS_FILE }}
+        else
+          terraform destroy -auto-approve
+        fi
+
+    - name: Cleanup
+      if: always()
+      run: |
+        echo "=== Limpieza final ==="
+        rm -rf /tmp/terraform* 2>/dev/null || true
+        df -h
