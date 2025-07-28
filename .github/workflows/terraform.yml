@@ -55,7 +55,7 @@ jobs:
         echo "=== Espacio después de limpieza agresiva ==="
         df -h
         
-        # Verificar espacio disponible
+        # Vedrificar espacio disponible
         AVAILABLE=$(df / | awk 'NR==2 {print $4}')
         if [ $AVAILABLE -lt 1048576 ]; then
           echo "ERROR: Aún no hay suficiente espacio libre. Disponible: ${AVAILABLE}KB"
