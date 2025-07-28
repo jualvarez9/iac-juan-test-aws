@@ -1,0 +1,54 @@
+name: ArgoCD Test
+on:
+  push:
+    paths:
+      - 'test-app/**'
+      - 'argocd/**'
+  workflow_dispatch:
+
+jobs:
+  argocd-test:
+    runs-on: [self-hosted, k3s, aws]
+    steps:
+    - uses: actions/checkout@v3
+      
+    - name: Debug environment
+      run: |
+        whoami
+        echo "PATH: $PATH"
+        which kubectl
+        ls -la ~/.kube/
+        echo "KUBECONFIG: $KUBECONFIG"
+    
+    
+    
+    - name: Test kubectl on master
+      run: |
+        # Verificar si estamos en el master
+        sudo k3s get nodes
+    
+    - name: Check Memory
+      run: |
+        free -h
+        available_mem=$(free -m | awk 'NR==2{print $7}')
+        if [ $available_mem -lt 150 ]; then
+          echo "Cleaning memory..."
+          sudo sync && sudo sysctl vm.drop_caches=3
+        fi
+    
+    - name: Install ArgoCD
+      run: |
+        kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+        kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/core-install.yaml
+        kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
+    
+    - name: Deploy Test App
+      run: |
+        kubectl apply -f argocd/test-app.yaml
+        sleep 30
+        kubectl get apps -n argocd
+        kubectl get pods
+        
+    - name: Show Access Info
+      run: |
+        echo "Test app will be available at: http://$(curl -s ifconfig.me):30081"
