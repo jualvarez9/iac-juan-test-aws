@@ -9,7 +9,7 @@ resource "aws_instance" "prueba1" {
 }
 
 resource "aws_instance" "prueba2" {
-  count = 5
+  count = 2
   ami           = var.ami["apache"] 
   instance_type = "t2.micro"
 
