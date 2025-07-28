@@ -11,6 +11,12 @@ jobs:
     runs-on: [self-hosted, k3s, aws]
     steps:
     - uses: actions/checkout@v3
+
+    - name: Test kubectl on master
+      run: |
+        # Verificar si estamos en el master
+        kubectl get nodes
+        kubectl cluster-info
     
     - name: Check Memory
       run: |
