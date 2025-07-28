@@ -10,6 +10,7 @@ jobs:
       - name: Setup environment for root
         run: |
           echo "Current user: $(whoami)"
+          echo "Hostanme: "$(hostname)""
           echo "Original PATH: $PATH"
           
           # Asegurar que kubectl esté disponible
