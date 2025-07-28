@@ -62,6 +62,12 @@ jobs:
           echo "Se requieren al menos 1GB libres para continuar"
           exit 1
         fi
+
+        # Vedrificar kubectl
+
+        sudo kubectl get nodes
+
+
         echo "✅ Espacio suficiente disponible: ${AVAILABLE}KB"
 
     - name: Manual Checkoutd
