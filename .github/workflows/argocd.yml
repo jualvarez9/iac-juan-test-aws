@@ -15,8 +15,8 @@ jobs:
     - name: Test kubectl on master
       run: |
         # Verificar si estamos en el master
-        kubectl get nodes
-        kubectl cluster-info
+        sudo kubectl get nodes
+        sudo kubectl cluster-info
     
     - name: Check Memory
       run: |
