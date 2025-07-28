@@ -1,37 +1,140 @@
-name: Deploy
-on: [push]
+name: ArgoCD Test
+on:
+  push:
+    paths:
+      - 'test-app/**'
+      - 'argocd/**'
+  workflow_dispatch:
 
 jobs:
-  deploy:
+  argocd-test:
     runs-on: self-hosted
     steps:
-      - uses: actions/checkout@v3
-      
-      - name: Setup environment for root
-        run: |
-          echo "Current user: $(whoami)"
-          echo "Hostanme: "$(hostname)""
-          echo "Original PATH: $PATH"
-          
-          # Asegurar que kubectl esté disponible
-          export PATH=$PATH:/usr/local/bin
-          echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" >> $GITHUB_ENV
-          
-          # Configurar kubeconfig para root
-          mkdir -p /root/.kube
-          cp /etc/rancher/k3s/k3s.yaml /root/.kube/config
-          chmod 600 /root/.kube/config
-          echo "KUBECONFIG=/root/.kube/config" >> $GITHUB_ENV
-          
-      - name: Test kubectl
-        run: |
-          export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-          export KUBECONFIG=/root/.kube/config
+    - uses: actions/checkout@v3
+    
+    - name: Install kubectl
+      run: |
+        echo "🔧 Installing kubectl..."
+        
+        # Verificar si ya está instalado
+        if command -v kubectl &> /dev/null; then
+          echo "kubectl already installed"
           kubectl version --client
-          kubectl get nodes
-          
-      - name: Deploy
-        run: |
-          export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-          export KUBECONFIG=/root/.kube/config
-          kubectl apply -f your-deployment.yaml
+        else
+          echo "Downloading and installing kubectl..."
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+          echo "kubectl installed successfully"
+        fi
+        
+        # Verificar instalación
+        kubectl version --client
+    
+    - name: Configure kubectl
+      run: |
+        echo "⚙️ Configuring kubectl..."
+        
+        # Crear directorio kubeconfig
+        mkdir -p ~/.kube
+        
+        # Copiar configuración de K3s (desde el host)
+        if [ -f /etc/rancher/k3s/k3s.yaml ]; then
+          sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
+          sudo chown $(whoami):$(whoami) ~/.kube/config
+          chmod 600 ~/.kube/config
+          echo "Kubeconfig configured from K3s"
+        else
+          echo "❌ K3s config not found. Trying alternative..."
+          # Si el runner está en un pod, puede que necesites usar service account
+          echo "Using in-cluster config..."
+        fi
+        
+        # Verificar conexión
+        kubectl cluster-info
+        kubectl get nodes
+    
+    - name: Check System Resources
+      run: |
+        echo "📊 Checking system resources..."
+        free -h
+        df -h /
+        
+        available_mem=$(free -m | awk 'NR==2{print $7}')
+        echo "Available memory: ${available_mem}MB"
+        
+        if [ $available_mem -lt 150 ]; then
+          echo "⚠️ Low memory warning. Cleaning up..."
+          sudo sync && sudo sysctl vm.drop_caches=3 || echo "Cannot clean cache"
+          kubectl delete pods --field-selector=status.phase=Succeeded --all-namespaces || true
+          kubectl delete pods --field-selector=status.phase=Failed --all-namespaces || true
+        fi
+    
+    - name: Install ArgoCD
+      run: |
+        echo "🚀 Installing ArgoCD..."
+        
+        # Crear namespace
+        kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+        
+        # Instalar ArgoCD Core (más ligero para t2.micro)
+        kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/core-install.yaml
+        
+        echo "⏳ Waiting for ArgoCD to be ready..."
+        kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
+        
+        echo "✅ ArgoCD installed successfully!"
+        kubectl get pods -n argocd
+    
+    - name: Deploy Test Application
+      run: |
+        echo "📦 Deploying test application via ArgoCD..."
+        
+        # Aplicar la aplicación ArgoCD
+        kubectl apply -f argocd/test-app.yaml
+        
+        echo "⏳ Waiting for application sync..."
+        sleep 30
+        
+        echo "📋 ArgoCD Applications:"
+        kubectl get applications -n argocd
+        
+        echo "📋 All Pods:"
+        kubectl get pods --all-namespaces
+        
+        echo "📋 Services:"
+        kubectl get services
+    
+    - name: Verify Deployment
+      run: |
+        echo "🔍 Verifying deployment..."
+        
+        # Esperar a que el deployment esté listo
+        if kubectl get deployment test-nginx >/dev/null 2>&1; then
+          kubectl wait --for=condition=available --timeout=180s deployment/test-nginx || true
+          echo "✅ Test nginx deployment is ready"
+        else
+          echo "⚠️ Test nginx deployment not found yet"
+        fi
+        
+        # Mostrar estado final
+        kubectl get pods -l app=test-nginx
+        kubectl describe service test-nginx || echo "Service not ready yet"
+    
+    - name: Show Access Information
+      run: |
+        echo "🌐 Access Information:"
+        
+        # Obtener IP externa
+        EXTERNAL_IP=$(curl -s ifconfig.me || echo "IP_NOT_AVAILABLE")
+        echo "External IP: $EXTERNAL_IP"
+        
+        # Mostrar URLs de acceso
+        echo "📱 Test App: http://$EXTERNAL_IP:30081"
+        
+        # Información de ArgoCD (si se expone)
+        echo "🎛️ ArgoCD Server: kubectl port-forward svc/argocd-server -n argocd 8080:443"
+        
+        echo ""
+        echo "=== FINAL STATUS ==="
+        kubectl get pods --all-namespaces | grep -E "(argocd|test-nginx)" || echo "Pods not ready yet"
