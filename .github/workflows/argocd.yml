@@ -11,7 +11,17 @@ jobs:
     runs-on: [self-hosted, k3s, aws]
     steps:
     - uses: actions/checkout@v3
-
+      
+    - name: Debug environment
+      run: |
+        whoami
+        echo "PATH: $PATH"
+        which kubectl
+        ls -la ~/.kube/
+        echo "KUBECONFIG: $KUBECONFIG"
+    
+    
+    
     - name: Test kubectl on master
       run: |
         # Verificar si estamos en el master
