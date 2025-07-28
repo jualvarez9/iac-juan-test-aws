@@ -2,7 +2,7 @@ name: 'Terraform IAC AWS Workflow'
 
 on:
   push:
-    branches: [ "main" ]
+    #branches: [ "main" ]
   workflow_dispatch:
 
 permissions:
@@ -62,11 +62,6 @@ jobs:
           echo "Se requieren al menos 1GB libres para continuar"
           exit 1
         fi
-
-        # Vedrificar kubectl
-
-        sudo k3s kubectl get nodes
-
 
         echo "✅ Espacio suficiente disponible: ${AVAILABLE}KB"
 
