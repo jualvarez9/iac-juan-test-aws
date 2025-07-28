@@ -2,7 +2,7 @@ name: 'Terraform IAC AWS Workflow'
 
 on:
   push:
-    #branches: [ "main" ]
+    branches: [ "main" ]
   workflow_dispatch:
 
 permissions:

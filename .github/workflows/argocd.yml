@@ -8,7 +8,7 @@ on:
 
 jobs:
   argocd-test:
-    runs-on: self-hosted
+    runs-on: [self-hosted, k3s, aws]
     steps:
     - uses: actions/checkout@v3
     
