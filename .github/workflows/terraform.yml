@@ -65,7 +65,7 @@ jobs:
 
         # Vedrificar kubectl
 
-        sudo kubectl get nodes
+        sudo k3s kubectl get nodes
 
 
         echo "✅ Espacio suficiente disponible: ${AVAILABLE}KB"
